@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Home Network Analyzer Dashboard</title>
+  <style>
+    :root { --bg:#0f172a; --card:#1e293b; --accent:#22c55e; --danger:#ef4444; --text:#e2e8f0; --muted:#94a3b8; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--text); }
+    header { padding:16px 24px; background:#111827; display:flex; justify-content:space-between; align-items:center; }
+    header h1 { margin:0; font-size:1.25rem; }
+    nav a { color:var(--muted); margin-left:16px; text-decoration:none; }
+    nav a.active { color:var(--accent); }
+    main { padding:24px; max-width:1200px; margin:0 auto; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:20px; }
+    .card { background:var(--card); border-radius:12px; padding:20px; }
+    .card h2 { margin:0 0 12px 0; font-size:1rem; color:var(--muted); }
+    .stat { font-size:2rem; font-weight:700; }
+    table { width:100%; border-collapse:collapse; margin-top:12px; }
+    th, td { text-align:left; padding:8px 10px; border-bottom:1px solid #334155; }
+    th { color:var(--muted); font-size:0.85rem; }
+    .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:0.75rem; }
+    .badge.block { background:#7f1d1d; color:#fecaca; }
+    .badge.allow { background:#14532d; color:#bbf7d0; }
+    .badge.off { background:#374151; color:#9ca3af; }
+    .btn { background:var(--accent); color:#0f172a; border:none; padding:8px 14px; border-radius:8px; cursor:pointer; font-weight:600; }
+    .btn.secondary { background:#334155; color:var(--text); }
+    .btn.danger { background:var(--danger); color:#fff; }
+    .btn.small { padding:4px 8px; font-size:0.8rem; }
+    form.inline { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; }
+    input, select { background:#0f172a; color:var(--text); border:1px solid #334155; padding:8px; border-radius:6px; }
+    .row-actions { display:flex; gap:6px; }
+    .tabs { display:flex; gap:8px; margin-bottom:16px; }
+    .tab { padding:8px 16px; border-radius:8px; background:#334155; cursor:pointer; border:none; color:var(--text); }
+    .tab.active { background:var(--accent); color:#0f172a; }
+    .section { display:none; }
+    .section.active { display:block; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🛡️ Home Network Analyzer</h1>
+    <nav>
+      <a href="#" class="active">Dashboard</a>
+      <a href="/docs">API Docs</a>
+    </nav>
+  </header>
+  <main>
+    <div class="tabs">
+      <button class="tab active" data-tab="overview">Overview</button>
+      <button class="tab" data-tab="packets">Packets</button>
+      <button class="tab" data-tab="rules">Rules</button>
+      <button class="tab" data-tab="quick">Quick Actions</button>
+    </div>
+
+    <!-- Overview -->
+    <section id="overview" class="section active">
+      <div class="grid">
+        <div class="card">
+          <h2>Packets Stored</h2>
+          <div class="stat" id="pkt-count">–</div>
+        </div>
+        <div class="card">
+          <h2>Rules</h2>
+          <div class="stat" id="rule-count">–</div>
+        </div>
+        <div class="card">
+          <h2>Enabled Rules</h2>
+          <div class="stat" id="enabled-count">–</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Packets -->
+    <section id="packets" class="section">
+      <div class="card">
+        <h2>Recent Packets</h2>
+        <div style="display:flex; gap:8px; margin-bottom:8px;">
+          <input id="pkt-limit" type="number" value="50" style="width:80px;" />
+          <button class="btn small" onclick="loadPackets()">Refresh</button>
+        </div>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Time</th><th>Src IP</th><th>Dst IP</th><th>Proto</th><th>Len</th></tr>
+          </thead>
+          <tbody id="pkt-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Rules -->
+    <section id="rules" class="section">
+      <div class="card">
+        <h2>Add New Rule</h2>
+        <form id="rule-form" class="inline">
+          <select name="action" required>
+            <option value="block">Block</option>
+            <option value="allow">Allow</option>
+            <option value="reject">Reject</option>
+          </select>
+          <select name="target" required>
+            <option value="ip">IP</option>
+            <option value="subnet">Subnet (CIDR)</option>
+            <option value="port">Port</option>
+            <option value="protocol">Protocol</option>
+            <option value="mac">MAC</option>
+          </select>
+          <input name="value" placeholder="Value (e.g. 192.168.1.1, 22, ssh)" required />
+          <select name="protocol">
+            <option value="any">any</option>
+            <option value="tcp">tcp</option>
+            <option value="udp">udp</option>
+            <option value="icmp">icmp</option>
+          </select>
+          <select name="direction">
+            <option value="both">both</option>
+            <option value="in">in</option>
+            <option value="out">out</option>
+          </select>
+          <input name="description" placeholder="Description (optional)" />
+          <button class="btn" type="submit">Add Rule</button>
+        </form>
+      </div>
+
+      <div class="card" style="margin-top:20px;">
+        <h2>Existing Rules</h2>
+        <button class="btn secondary small" onclick="loadRules()">Refresh</button>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Action</th><th>Target</th><th>Value</th><th>Proto</th><th>Dir</th><th>Enabled</th><th>Actions</th></tr>
+          </thead>
+          <tbody id="rule-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Quick Actions -->
+    <section id="quick" class="section">
+      <div class="grid">
+        <div class="card">
+          <h2>Quick Block</h2>
+          <form class="inline" onsubmit="quickBlock(event)">
+            <input name="ip" placeholder="IP Address" required />
+            <button class="btn danger" type="submit">Block IP</button>
+          </form>
+          <form class="inline" onsubmit="quickBlockPort(event)" style="margin-top:8px;">
+            <input name="port" type="number" placeholder="Port" required />
+            <button class="btn danger" type="submit">Block Port</button>
+          </form>
+        </div>
+        <div class="card">
+          <h2>Quick Allow</h2>
+          <form class="inline" onsubmit="quickAllow(event)">
+            <input name="ip" placeholder="IP Address" required />
+            <button class="btn" type="submit">Allow IP</button>
+          </form>
+          <form class="inline" onsubmit="quickAllowPort(event)" style="margin-top:8px;">
+            <input name="port" type="number" placeholder="Port" required />
+            <button class="btn" type="submit">Allow Port</button>
+          </form>
+        </div>
+      </div>
+    </section>
+  </main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    tab.classList.add('active');
+    $(tab.dataset.tab).classList.add('active');
+    if (tab.dataset.tab === 'packets') loadPackets();
+    if (tab.dataset.tab === 'rules') loadRules();
+    if (tab.dataset.tab === 'overview') loadOverview();
+  };
+});
+
+async function loadOverview() {
+  const c = await (await fetch('/api/packets/count')).json();
+  $('pkt-count').textContent = c.count ?? 0;
+  const r = await (await fetch('/api/rules')).json();
+  $('rule-count').textContent = r.count ?? 0;
+  $('enabled-count').textContent = (r.rules || []).filter(x => x.enabled).length;
+}
+
+async function loadPackets() {
+  const limit = $('pkt-limit')?.value || 50;
+  const res = await (await fetch(`/api/packets?limit=${limit}`)).json();
+  const tbody = $('pkt-tbody');
+  tbody.innerHTML = '';
+  for (const p of res.packets || []) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${p.id ?? '-'}</td>
+      <td>${p.timestamp?.replace('T',' ').replace('Z','') ?? '-'}</td>
+      <td>${p.src_ip ?? '-'}</td><td>${p.dst_ip ?? '-'}</td>
+      <td>${p.transport_protocol ?? '-'}</td><td>${p.length ?? '-'}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+async function loadRules() {
+  const res = await (await fetch('/api/rules')).json();
+  const tbody = $('rule-tbody');
+  tbody.innerHTML = '';
+  for (const r of res.rules || []) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${r.id}</td>
+      <td><span class="badge ${r.action}">${r.action}</span></td>
+      <td>${r.target}</td><td>${r.value}</td>
+      <td>${r.protocol}</td><td>${r.direction}</td>
+      <td>${r.enabled ? '✅' : '<span class="badge off">off</span>'}</td>
+      <td class="row-actions">
+        <button class="btn small secondary" onclick="toggleRule(${r.id}, ${!r.enabled})">${r.enabled ? 'Disable' : 'Enable'}</button>
+        <button class="btn small danger" onclick="deleteRule(${r.id})">Delete</button>
+      </td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+$('rule-form').onsubmit = async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const body = Object.fromEntries(fd.entries());
+  const res = await fetch('/api/rules', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (res.ok) { e.target.reset(); loadRules(); loadOverview(); }
+  else { alert('Error: ' + (await res.text())); }
+};
+
+async function toggleRule(id, enable) {
+  await fetch(`/api/rules/${id}/${enable ? 'enable' : 'disable'}`, { method:'POST' });
+  loadRules();
+}
+
+async function deleteRule(id) {
+  if (!confirm('Delete rule ' + id + '?')) return;
+  await fetch(`/api/rules/${id}`, { method:'DELETE' });
+  loadRules();
+  loadOverview();
+}
+
+// Quick actions
+async function quickBlock(e) { e.preventDefault(); const ip = e.target.ip.value; await fetch('/api/rules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'block',target:'ip',value:ip})}); loadRules(); loadOverview(); e.target.reset(); }
+async function quickAllow(e) { e.preventDefault(); const ip = e.target.ip.value; await fetch('/api/rules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'allow',target:'ip',value:ip})}); loadRules(); loadOverview(); e.target.reset(); }
+async function quickBlockPort(e) { e.preventDefault(); const port = e.target.port.value; await fetch('/api/rules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'block',target:'port',value:port})}); loadRules(); loadOverview(); e.target.reset(); }
+async function quickAllowPort(e) { e.preventDefault(); const port = e.target.port.value; await fetch('/api/rules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'allow',target:'port',value:port})}); loadRules(); loadOverview(); e.target.reset(); }
+
+// Initial load
+loadOverview();
+</script>
+</body>
+</html>
