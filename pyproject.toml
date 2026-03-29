@@ -64,7 +64,7 @@ warn_unused_configs = true
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-v --cov=home_net_analyzer --cov-report=term-missing"
+addopts = "-v"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 
