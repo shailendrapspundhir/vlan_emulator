@@ -492,6 +492,139 @@ def _interactive_settings() -> None:
     console.print(table)
 
 
+def _interactive_simulate() -> None:
+    """Simulation submenu: generate, store, stats for packet scenarios + topologies."""
+    from home_net_analyzer.simulation import (
+        SimulatedPacketCapture,
+        list_scenarios,
+        get_scenario,
+    )
+    from home_net_analyzer.topology import Topology, VLAN, VirtualHost
+
+    cap = SimulatedPacketCapture()
+
+    while True:
+        choice = _prompt_choice(
+            "Simulate",
+            [
+                "List Scenarios",
+                "Generate Scenario",
+                "Generate Custom",
+                "Store Packets",
+                "Generate + Store",
+                "View Stats",
+                "Example Topology",
+                "Back",
+            ],
+        )
+        if choice == "Back":
+            break
+
+        if choice == "List Scenarios":
+            rprint("\n[bold]Available Scenarios:[/bold]")
+            for name in list_scenarios():
+                s = get_scenario(name)
+                rprint(f"  • [cyan]{name}[/cyan]: {s.description or '(no description)'}")
+            rprint()
+
+        elif choice == "Generate Scenario":
+            name = typer.prompt("Scenario name", default="web_browsing")
+            try:
+                pkts = cap.generate_scenario(name)
+                rprint(f"[green]Generated {len(pkts)} packets for '{name}'.[/green]")
+                # Show sample
+                if pkts:
+                    p = pkts[0]
+                    rprint(f"  Example: {p.transport_protocol}/{p.application_protocol or '-'} "
+                           f"{p.src_ip or '?'} -> {p.dst_ip or '?'} vlan={p.vlan_id or '-'}")
+            except KeyError as e:
+                rprint(f"[red]{e}[/red]")
+            rprint()
+
+        elif choice == "Generate Custom":
+            src = typer.prompt("Src (host/IP)", default="client")
+            dst = typer.prompt("Dst (host/IP)", default="server")
+            proto = typer.prompt("Protocol (tcp/udp/icmp)", default="tcp")
+            dport = typer.prompt("Dst port (blank=auto)", default="")
+            dst_port = int(dport) if dport else None
+            count = int(typer.prompt("Count", default="5"))
+            app = typer.prompt("App (HTTP/DNS/SSH etc, blank=auto)", default="") or None
+            vlan = typer.prompt("VLAN ID (blank=none)", default="")
+            vlan_id = int(vlan) if vlan else None
+            pkts = cap.generate(src=src, dst=dst, protocol=proto, dst_port=dst_port,
+                                count=count, app=app, vlan_id=vlan_id)
+            rprint(f"[green]Generated {len(pkts)} packets.[/green]")
+            rprint()
+
+        elif choice == "Store Packets":
+            # Generate a quick scenario and store
+            name = typer.prompt("Scenario to generate & store", default="dns_resolution")
+            db_path = typer.prompt("DB path", default=str(get_settings().get_database_path()))
+            try:
+                stats = cap.generate_and_store(name, db_path=db_path)
+                rprint(f"[green]Stored: {stats['stored']} (generated {stats['generated']}), DB total: {stats['db_count']}[/green]")
+            except Exception as e:
+                rprint(f"[red]Error: {e}[/red]")
+            rprint()
+
+        elif choice == "Generate + Store":
+            name = typer.prompt("Scenario", default="web_browsing")
+            db_path = typer.prompt("DB path", default=str(get_settings().get_database_path()))
+            try:
+                stats = cap.generate_and_store(name, db_path=db_path)
+                rprint(f"[green]✓ Generated {stats['generated']} → stored {stats['stored']} → DB now has {stats['db_count']}[/green]")
+            except Exception as e:
+                rprint(f"[red]Error: {e}[/red]")
+            rprint()
+
+        elif choice == "View Stats":
+            db_path = typer.prompt("DB path", default=str(get_settings().get_database_path()))
+            try:
+                with PacketStore(db_path) as store:
+                    total = store.count()
+                    rprint(f"\n[bold]Stats for {db_path}:[/bold]")
+                    rprint(f"  Total packets: [cyan]{total}[/cyan]")
+                    # Protocol breakdown
+                    tcp = len(store.db.query(transport_protocol="TCP", limit=1000))
+                    udp = len(store.db.query(transport_protocol="UDP", limit=1000))
+                    icmp = len(store.db.query(transport_protocol="ICMP", limit=1000))
+                    rprint(f"  TCP: {tcp}, UDP: {udp}, ICMP: {icmp}")
+                    # Recent sample
+                    recent = store.recent(limit=3)
+                    if recent:
+                        rprint("\n  Recent:")
+                        for r in recent:
+                            rprint(f"    {r.transport_protocol or '?'} {r.src_ip or '?'} → {r.dst_ip or '?'}")
+            except Exception as e:
+                rprint(f"[red]Error: {e}[/red]")
+            rprint()
+
+        elif choice == "Example Topology":
+            rprint("\n[bold]Creating example corporate topology...[/bold]")
+            topo = Topology(
+                name="ExampleCorp",
+                vlans=[
+                    VLAN(id=10, name="Management", subnet="10.0.10.0/24", gateway="10.0.10.1"),
+                    VLAN(id=20, name="Engineering", subnet="10.0.20.0/24", gateway="10.0.20.1"),
+                ],
+                hosts=[
+                    VirtualHost(name="mgmt-pc", mac="aa:bb:cc:01:00:01", ip="10.0.10.101", vlan_id=10, role="endpoint"),
+                    VirtualHost(name="eng-laptop", mac="aa:bb:cc:02:00:01", ip="10.0.20.101", vlan_id=20, role="endpoint"),
+                    VirtualHost(name="web-server", mac="aa:bb:cc:03:00:01", ip="10.0.20.50", vlan_id=20, role="server"),
+                ],
+            )
+            rprint(f"  Topology: [cyan]{topo.name}[/cyan] with {len(topo.vlans)} VLANs, {len(topo.hosts)} hosts")
+            # Generate traffic between hosts
+            pkts = cap.generate(src="mgmt-pc", dst="web-server", protocol="tcp", dst_port=443, count=4)
+            rprint(f"  Generated {len(pkts)} packets: mgmt-pc → web-server (TLS)")
+            # Store
+            db_path = typer.prompt("Store to DB path (blank=skip)", default="")
+            if db_path:
+                stats = cap.store(pkts, db_path=db_path)
+                rprint(f"  [green]Stored {stats['stored']} packets. DB total: {stats['db_count']}[/green]")
+            rprint()
+
+
 @app.command("interactive")
 def cmd_interactive() -> None:
     """Launch the interactive menu-driven CLI."""
@@ -500,7 +633,7 @@ def cmd_interactive() -> None:
     while True:
         choice = _prompt_choice(
             "Main Menu",
-            ["Packets", "Rules", "Dashboard", "Settings", "Exit"],
+            ["Packets", "Rules", "Simulate", "Dashboard", "Settings", "Exit"],
         )
         if choice == "Exit":
             rprint("[cyan]Goodbye![/cyan]")
@@ -509,6 +642,8 @@ def cmd_interactive() -> None:
             _interactive_packets()
         elif choice == "Rules":
             _interactive_rules()
+        elif choice == "Simulate":
+            _interactive_simulate()
         elif choice == "Dashboard":
             _interactive_dashboard()
             break  # Dashboard blocks until stopped
