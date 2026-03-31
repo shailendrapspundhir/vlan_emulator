@@ -311,6 +311,20 @@ def cmd_dashboard(
 
 
 # ---------------------------------------------------------------------------
+# Desktop GUI (Flet)
+# ---------------------------------------------------------------------------
+
+
+@app.command("desktop")
+def cmd_desktop() -> None:
+    """Launch the Flet desktop GUI application."""
+    from home_net_analyzer.desktop.app import run_app
+
+    rprint("[green]Starting VLAN Emulator Desktop...[/green]")
+    run_app()
+
+
+# ---------------------------------------------------------------------------
 # Interactive CLI (menu-driven)
 # ---------------------------------------------------------------------------
 
